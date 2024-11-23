@@ -1,7 +1,6 @@
 # The MIT License (MIT)
 # Copyright © 2023 Yuma Rao
-# TODO(developer): Set your name
-# Copyright © 2023 <your name>
+# Copyright © 2024 reed987
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
@@ -16,153 +15,187 @@
 # THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
-
-import time
-import typing
 import bittensor as bt
 
-# Bittensor Miner Template:
-import template
+import crypto_ai
+from crypto_ai.base.miner import BaseMinerNeuron
 
-# import base miner class which takes care of most of the boilerplate
-from template.base.miner import BaseMinerNeuron
+import os
+import requests
+import configparser
+import joblib
+import time
+from transformers import AutoModelForSequenceClassification, AutoTokenizer
+import torch
+import typing
 
+import keras
+import sklearn
 
 class Miner(BaseMinerNeuron):
     """
-    Your miner neuron class. You should use this class to define your miner's behavior. In particular, you should replace the forward function with your own logic. You may also want to override the blacklist and priority functions according to your needs.
-
-    This class inherits from the BaseMinerNeuron class, which in turn inherits from BaseNeuron. The BaseNeuron class takes care of routine tasks such as setting up wallet, subtensor, metagraph, logging directory, parsing config, etc. You can override any of the methods in BaseNeuron if you need to customize the behavior.
-
-    This class provides reasonable default behavior for a miner such as blacklisting unrecognized hotkeys, prioritizing requests based on stake, and forwarding requests to the forward function. If you need to define custom
+    Miner neuron class.
     """
 
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
+        self.coingecko_url = "https://api.coingecko.com/api/v3/simple/price"
+        
+        # Load default symbols, model path and currency from config
+        self.crypto_symbols, self.model_path, self.currency = self.load_config()
+        
+        # Load model and tokenizer from Hugging Face or other formats
+        if self.model_path:
+            self.model = self.load_model(self.model_path)  # Load the model based on its file type
 
-        # TODO(developer): Anything specific to your use case you can do here
+            self.check_model_type(self.model)
+            
+            # Initialize tokenizer only if the loaded model is compatible
+            if isinstance(self.model, AutoModelForSequenceClassification):
+                self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
+            else:
+                raise ValueError("Model must be an instance of AutoModelForSequenceClassification.")
+        else:
+            raise ValueError("Model path must be provided in the configuration file.")
+        
+    def load_config(self):
+        # default values
+        config = configparser.ConfigParser()
+        config.read('config.properties')
+        
+        # Load symbols, model path, and currency from DEFAULT section
+        if config.has_section('DEFAULT'):
+            symbols = config.get('DEFAULT', 'symbols', fallback='tao').split(',')
+            model_path = config.get('DEFAULT', 'model_path', fallback=None)
+            currency = config.get('DEFAULT', 'currency', fallback='usd')  # Default to 'usd' if not specified
+            
+            return [symbol.strip() for symbol in symbols], model_path, currency  # Strip whitespace from symbols
+        
+        return [], None, 'usd'  # Return empty list, None for model path, and default currency
 
-    async def forward(
-        self, synapse: template.protocol.Dummy
-    ) -> template.protocol.Dummy:
+    def load_model(self, model_path):
+        """Load a model from various formats based on its file extension."""
+        _, ext = os.path.splitext(model_path)  # Get the file extension
+        
+        # Load PyTorch models (.pth or .pt)
+        if ext == '.pth' or ext == '.pt':
+            return torch.load(model_path)  # Load PyTorch models
+            
+        # Load Keras models (.h5)
+        elif ext == '.h5':
+            from tensorflow.keras.models import load_model
+            return load_model(model_path)  # Load Keras models
+            
+        # Load joblib or pickle models (.pkl or .joblib)
+        elif ext == '.pkl' or ext == '.joblib':
+            return joblib.load(model_path)  # Load joblib or pickle models
+            
+        else:
+            raise ValueError(f"Unsupported model format: {ext}")  # Raise error for unsupported formats
+
+    def check_model_type(model):
+        """Check the type of the loaded model."""
+        
+        # Check for Logistic Regression (sklearn .pkl or .joblib)
+        if isinstance(model, sklearn.linear_model.LogisticRegression):
+            return "LR"
+        
+        # Check for LSTM (Keras .h5)
+        elif isinstance(model, keras.Model) and any('lstm' in layer.name.lower() for layer in model.layers):
+            return "LSTM"
+        
+        # Check for GRU (Keras .h5)
+        elif isinstance(model, keras.Model) and any('gru' in layer.name.lower() for layer in model.layers):
+            return "GRU"
+        
+        # Check for CNN (Keras .h5)
+        elif isinstance(model, keras.Model) and any('conv' in layer.name.lower() for layer in model.layers):
+            return "CNN"
+        
+        # If the model is a PyTorch model, we can check its architecture (.pt or .pth)
+        elif isinstance(model, torch.nn.Module):
+            if any(isinstance(layer, torch.nn.LSTM) for layer in model.children()):
+                return "LSTM"
+            elif any(isinstance(layer, torch.nn.GRU) for layer in model.children()):
+                return "GRU"
+            elif any(isinstance(layer, torch.nn.Conv2d) for layer in model.children()):
+                return "CNN"
+            elif isinstance(model, torch.nn.Linear):  # Assuming it's a simple linear model
+                return "LR"
+
+        raise ValueError("Unknown or unsupported model type.")
+    
+    def get_prices(self, symbols, currency):
+        params = {
+            'ids': ','.join(symbols),
+            'vs_currencies': currency  # Use the specified currency from request or config
+        }
+        response = requests.get(self.coingecko_url, params=params)
+        if response.status_code == 200:
+            return response.json()
+        else:
+            return None
+
+    def generate_prediction(self, current_prices):
         """
-        Processes the incoming 'Dummy' synapse by performing a predefined operation on the input data.
-        This method should be replaced with actual logic relevant to the miner's purpose.
-
+        Generate predictions using the loaded model.
+        
         Args:
-            synapse (template.protocol.Dummy): The synapse object containing the 'dummy_input' data.
+            current_prices (dict): Current prices of cryptocurrencies.
 
         Returns:
-            template.protocol.Dummy: The synapse object with the 'dummy_output' field set to twice the 'dummy_input' value.
-
-        The 'forward' function is a placeholder and should be overridden with logic that is appropriate for
-        the miner's intended operation. This method demonstrates a basic transformation of input data.
+            dict: Predicted prices formatted as "Xcurrency".
         """
-        # TODO(developer): Replace with actual implementation logic.
-        synapse.dummy_output = synapse.dummy_input * 2
-        return synapse
+        predictions = {}
+        
+        # Example of using the model for predictions (adjust based on your model's requirements)
+        for symbol in current_prices.keys():
+            price = current_prices[symbol]  # Use the specified currency key
+            inputs = self.tokenizer.encode(str(price), return_tensors='pt')  # Tokenize input
+            
+            with torch.no_grad():
+                outputs = self.model(inputs)  # Get model outputs
+            
+            predicted_price = outputs.logits.argmax().item()  # Example logic for extracting prediction
+            
+            predictions[symbol] = predicted_price  # Price
+        
+        return predictions
 
-    async def blacklist(
-        self, synapse: template.protocol.Dummy
-    ) -> typing.Tuple[bool, str]:
-        """
-        Determines whether an incoming request should be blacklisted and thus ignored. Your implementation should
-        define the logic for blacklisting requests based on your needs and desired security parameters.
+    async def forward(self, synapse: crypto_ai.protocol.Dummy) -> crypto_ai.protocol.Dummy:
+        requested_symbols = synapse.request_data.get('symbols', self.crypto_symbols)
+        requested_currency = synapse.request_data.get('currency', self.currency)  # Use request currency or default
 
-        Blacklist runs before the synapse data has been deserialized (i.e. before synapse.data is available).
-        The synapse is instead contracted via the headers of the request. It is important to blacklist
-        requests before they are deserialized to avoid wasting resources on requests that will be ignored.
+        is_valid = any((len(symbol) <= 5 or len(symbol) >= 2) for symbol in requested_symbols)
 
-        Args:
-            synapse (template.protocol.Dummy): A synapse object constructed from the headers of the incoming request.
+        if not is_valid:
+            synapse.dummy_output = "No supported crypto symbols provided."
+            return synapse
 
-        Returns:
-            Tuple[bool, str]: A tuple containing a boolean indicating whether the synapse's hotkey is blacklisted,
-                            and a string providing the reason for the decision.
+        current_prices = self.get_prices(requested_symbols, requested_currency)
 
-        This function is a security measure to prevent resource wastage on undesired requests. It should be enhanced
-        to include checks against the metagraph for entity registration, validator status, and sufficient stake
-        before deserialization of synapse data to minimize processing overhead.
+        if current_prices:
+            predicted_prices = self.generate_prediction(current_prices)
+            
+            predictions_with_symbols = {
+                symbol: {
+                    "predicted_price": predicted_prices[symbol],
+                    "currency": requested_currency  # Currency returned ie USD
+                } for symbol in requested_symbols if symbol in predicted_prices
+            }
 
-        Example blacklist logic:
-        - Reject if the hotkey is not a registered entity within the metagraph.
-        - Consider blacklisting entities that are not validators or have insufficient stake.
-
-        In practice it would be wise to blacklist requests from entities that are not validators, or do not have
-        enough stake. This can be checked via metagraph.S and metagraph.validator_permit. You can always attain
-        the uid of the sender via a metagraph.hotkeys.index( synapse.dendrite.hotkey ) call.
-
-        Otherwise, allow the request to be processed further.
-        """
-
-        if synapse.dendrite is None or synapse.dendrite.hotkey is None:
-            bt.logging.warning(
-                "Received a request without a dendrite or hotkey."
-            )
-            return True, "Missing dendrite or hotkey"
-
-        # TODO(developer): Define how miners should blacklist requests.
-        uid = self.metagraph.hotkeys.index(synapse.dendrite.hotkey)
-        if (
-            not self.config.blacklist.allow_non_registered
-            and synapse.dendrite.hotkey not in self.metagraph.hotkeys
-        ):
-            # Ignore requests from un-registered entities.
-            bt.logging.trace(
-                f"Blacklisting un-registered hotkey {synapse.dendrite.hotkey}"
-            )
-            return True, "Unrecognized hotkey"
-
-        if self.config.blacklist.force_validator_permit:
-            # If the config is set to force validator permit, then we should only allow requests from validators.
-            if not self.metagraph.validator_permit[uid]:
-                bt.logging.warning(
-                    f"Blacklisting a request from non-validator hotkey {synapse.dendrite.hotkey}"
-                )
-                return True, "Non-validator hotkey"
-
-        bt.logging.trace(
-            f"Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}"
-        )
-        return False, "Hotkey recognized!"
-
-    async def priority(self, synapse: template.protocol.Dummy) -> float:
-        """
-        The priority function determines the order in which requests are handled. More valuable or higher-priority
-        requests are processed before others. You should design your own priority mechanism with care.
-
-        This implementation assigns priority to incoming requests based on the calling entity's stake in the metagraph.
-
-        Args:
-            synapse (template.protocol.Dummy): The synapse object that contains metadata about the incoming request.
-
-        Returns:
-            float: A priority score derived from the stake of the calling entity.
-
-        Miners may receive messages from multiple entities at once. This function determines which request should be
-        processed first. Higher values indicate that the request should be processed first. Lower values indicate
-        that the request should be processed later.
-
-        Example priority logic:
-        - A higher stake results in a higher priority value.
-        """
-        if synapse.dendrite is None or synapse.dendrite.hotkey is None:
-            bt.logging.warning(
-                "Received a request without a dendrite or hotkey."
-            )
-            return 0.0
-
-        # TODO(developer): Define how miners should prioritize requests.
-        caller_uid = self.metagraph.hotkeys.index(
-            synapse.dendrite.hotkey
-        )  # Get the caller index.
-        priority = float(
-            self.metagraph.S[caller_uid]
-        )  # Return the stake as the priority.
-        bt.logging.trace(
-            f"Prioritizing {synapse.dendrite.hotkey} with value: {priority}"
-        )
-        return priority
+            synapse.dummy_output = predictions_with_symbols
+            
+            return synapse
+        else:
+            synapse.dummy_output = "Error fetching prices"
+            return synapse
+    
+    async def blacklist(self, synapse: crypto_ai.protocol.Dummy) -> typing.Tuple[bool, str]:
+        pass
+        
+    async def priority(self, synapse: crypto_ai.protocol.Dummy) -> float:
+        pass
 
 
 # This is the main function, which runs the miner.
