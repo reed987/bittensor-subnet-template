@@ -25,7 +25,6 @@ import requests
 import configparser
 import joblib
 import time
-from transformers import AutoModelForSequenceClassification, AutoTokenizer
 import torch
 import typing
 
