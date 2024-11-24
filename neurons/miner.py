@@ -32,6 +32,13 @@ import typing
 import keras
 import sklearn
 
+class ModelType:
+    """Class containing static model type constants."""
+    LR = "lr"
+    LSTM = "lstm"
+    GRU = "gru"
+    CNN = "cnn"
+
 class Miner(BaseMinerNeuron):
     """
     Miner neuron class.
@@ -39,22 +46,15 @@ class Miner(BaseMinerNeuron):
 
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
-        self.coingecko_url = "https://api.coingecko.com/api/v3/simple/price"
         
-        # Load default symbols, model path and currency from config
+        # Load default symbols, model path and currency from config file
         self.crypto_symbols, self.model_path, self.currency = self.load_config()
         
-        # Load model and tokenizer from Hugging Face or other formats
+        # Load model
         if self.model_path:
             self.model = self.load_model(self.model_path)  # Load the model based on its file type
 
-            self.check_model_type(self.model)
-            
-            # Initialize tokenizer only if the loaded model is compatible
-            if isinstance(self.model, AutoModelForSequenceClassification):
-                self.tokenizer = AutoTokenizer.from_pretrained(self.model_path)
-            else:
-                raise ValueError("Model must be an instance of AutoModelForSequenceClassification.")
+            self.model_type = self.check_model_type(self.model)
         else:
             raise ValueError("Model path must be provided in the configuration file.")
         
@@ -98,69 +98,62 @@ class Miner(BaseMinerNeuron):
         
         # Check for Logistic Regression (sklearn .pkl or .joblib)
         if isinstance(model, sklearn.linear_model.LogisticRegression):
-            return "LR"
+            return ModelType.LR
         
         # Check for LSTM (Keras .h5)
-        elif isinstance(model, keras.Model) and any('lstm' in layer.name.lower() for layer in model.layers):
-            return "LSTM"
+        elif isinstance(model, keras.Model) and any(ModelType.LSTM in layer.name.lower() for layer in model.layers):
+            return ModelType.LSTM
         
         # Check for GRU (Keras .h5)
-        elif isinstance(model, keras.Model) and any('gru' in layer.name.lower() for layer in model.layers):
-            return "GRU"
+        elif isinstance(model, keras.Model) and any(ModelType.GRU in layer.name.lower() for layer in model.layers):
+            return ModelType.GRU
         
         # Check for CNN (Keras .h5)
         elif isinstance(model, keras.Model) and any('conv' in layer.name.lower() for layer in model.layers):
-            return "CNN"
+            return ModelType.CNN
         
         # If the model is a PyTorch model, we can check its architecture (.pt or .pth)
         elif isinstance(model, torch.nn.Module):
             if any(isinstance(layer, torch.nn.LSTM) for layer in model.children()):
-                return "LSTM"
+                return ModelType.LSTM
             elif any(isinstance(layer, torch.nn.GRU) for layer in model.children()):
-                return "GRU"
+                return ModelType.GRU
             elif any(isinstance(layer, torch.nn.Conv2d) for layer in model.children()):
-                return "CNN"
+                return ModelType.CNN
             elif isinstance(model, torch.nn.Linear):  # Assuming it's a simple linear model
-                return "LR"
+                return ModelType.LR
 
         raise ValueError("Unknown or unsupported model type.")
     
-    def get_prices(self, symbols, currency):
-        params = {
-            'ids': ','.join(symbols),
-            'vs_currencies': currency  # Use the specified currency from request or config
-        }
-        response = requests.get(self.coingecko_url, params=params)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            return None
+    def get_historical_prices(self, symbols: list, currency: str):
+        """
+        # TODO Get/load historical prices
+        """
+        pass
 
-    def generate_prediction(self, current_prices):
+    def generate_prediction(self, historical_prices):
         """
         Generate predictions using the loaded model.
         
         Args:
-            current_prices (dict): Current prices of cryptocurrencies.
+            historical_prices: Current prices of cryptocurrencies.
 
         Returns:
-            dict: Predicted prices formatted as "Xcurrency".
+            predicted prices
         """
-        predictions = {}
-        
-        # Example of using the model for predictions (adjust based on your model's requirements)
-        for symbol in current_prices.keys():
-            price = current_prices[symbol]  # Use the specified currency key
-            inputs = self.tokenizer.encode(str(price), return_tensors='pt')  # Tokenize input
-            
-            with torch.no_grad():
-                outputs = self.model(inputs)  # Get model outputs
-            
-            predicted_price = outputs.logits.argmax().item()  # Example logic for extracting prediction
-            
-            predictions[symbol] = predicted_price  # Price
-        
-        return predictions
+        if self.model_type == ModelType.LR:
+            # TODO logic for Linear Regression
+            pass
+        elif self.model_type == ModelType.LSTM:
+            # TODO logic for Long Short Term Memory
+            pass
+        elif self.model_type == ModelType.CNN:
+            # TODO logic for Convolutional Neural Network
+            pass
+        elif self.model_type == ModelType.GRU:
+            # TODO logic for Gated Recurrent Unit
+            pass
+        pass
 
     async def forward(self, synapse: crypto_ai.protocol.Dummy) -> crypto_ai.protocol.Dummy:
         requested_symbols = synapse.request_data.get('symbols', self.crypto_symbols)
@@ -172,10 +165,10 @@ class Miner(BaseMinerNeuron):
             synapse.dummy_output = "No supported crypto symbols provided."
             return synapse
 
-        current_prices = self.get_prices(requested_symbols, requested_currency)
+        historical_prices = self.get_historical_prices(requested_symbols, requested_currency)
 
-        if current_prices:
-            predicted_prices = self.generate_prediction(current_prices)
+        if historical_prices:
+            predicted_prices = self.generate_prediction(historical_prices)
             
             predictions_with_symbols = {
                 symbol: {
