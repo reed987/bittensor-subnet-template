@@ -19,6 +19,7 @@ import bittensor as bt
 
 import crypto_ai
 from crypto_ai.base.miner import BaseMinerNeuron
+from enum import Enum
 
 import os
 import requests
@@ -31,7 +32,7 @@ import typing
 import keras
 import sklearn
 
-class ModelType:
+class ModelType(Enum):
     """Class containing static model type constants."""
     LR = "lr"
     LSTM = "lstm"
@@ -77,7 +78,7 @@ class Miner(BaseMinerNeuron):
         _, ext = os.path.splitext(model_path)  # Get the file extension
         
         # Load PyTorch models (.pth or .pt)
-        if ext == '.pth' or ext == '.pt':
+        if ext in ['.pth', '.pt']:
             return torch.load(model_path)  # Load PyTorch models
             
         # Load Keras models (.h5)
@@ -86,7 +87,7 @@ class Miner(BaseMinerNeuron):
             return load_model(model_path)  # Load Keras models
             
         # Load joblib or pickle models (.pkl or .joblib)
-        elif ext == '.pkl' or ext == '.joblib':
+        elif ext in ['.pkl', '.joblib']:
             return joblib.load(model_path)  # Load joblib or pickle models
             
         else:
@@ -96,31 +97,39 @@ class Miner(BaseMinerNeuron):
         """Check the type of the loaded model."""
         
         # Check for Logistic Regression (sklearn .pkl or .joblib)
-        if isinstance(model, sklearn.linear_model.LogisticRegression):
+        if isinstance(model, sklearn.linear_model.LinearRegression):
             return ModelType.LR
-        
-        # Check for LSTM (Keras .h5)
-        elif isinstance(model, keras.Model) and any(ModelType.LSTM in layer.name.lower() for layer in model.layers):
-            return ModelType.LSTM
-        
-        # Check for GRU (Keras .h5)
-        elif isinstance(model, keras.Model) and any(ModelType.GRU in layer.name.lower() for layer in model.layers):
-            return ModelType.GRU
-        
-        # Check for CNN (Keras .h5)
-        elif isinstance(model, keras.Model) and any('conv' in layer.name.lower() for layer in model.layers):
-            return ModelType.CNN
+
+        # Check if the model is a Keras model (.h5)
+        elif isinstance(model, keras.Model):
+            # Check for LSTM layers
+            if any(isinstance(layer, keras.layers.LSTM) for layer in model.layers):
+                return ModelType.LSTM
+            # Check for GRU layers
+            elif any(isinstance(layer, keras.layers.GRU) for layer in model.layers):
+                return ModelType.GRU
+            # Check for CNN layers
+            elif any(isinstance(layer, keras.layers.Conv2D) for layer in model.layers):
+                return ModelType.CNN
+            else:
+                raise ValueError("Unknown Keras model type.")
         
         # If the model is a PyTorch model, we can check its architecture (.pt or .pth)
         elif isinstance(model, torch.nn.Module):
-            if any(isinstance(layer, torch.nn.LSTM) for layer in model.children()):
+            # Check for LSTM layers
+            if any(isinstance(layer, torch.nn.LSTM) for layer in model.modules()):
                 return ModelType.LSTM
-            elif any(isinstance(layer, torch.nn.GRU) for layer in model.children()):
+            # Check for GRU layers
+            elif any(isinstance(layer, torch.nn.GRU) for layer in model.modules()):
                 return ModelType.GRU
-            elif any(isinstance(layer, torch.nn.Conv2d) for layer in model.children()):
+            # Check for CNN layers
+            elif any(isinstance(layer, torch.nn.Conv2d) for layer in model.modules()):
                 return ModelType.CNN
+            # Check for Linear Model
             elif isinstance(model, torch.nn.Linear):  # Assuming it's a simple linear model
                 return ModelType.LR
+            else:
+                raise ValueError("Unknown PyTorch model type.")
 
         raise ValueError("Unknown or unsupported model type.")
     
