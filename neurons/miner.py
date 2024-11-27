@@ -38,6 +38,7 @@ class ModelType(Enum):
     LSTM = "lstm"
     GRU = "gru"
     CNN = "cnn"
+    # TODO add your own models if needed
 
 class Miner(BaseMinerNeuron):
     """
@@ -161,6 +162,7 @@ class Miner(BaseMinerNeuron):
         elif self.model_type == ModelType.GRU:
             # TODO logic for Gated Recurrent Unit
             pass
+        # TODO logic for other models
         pass
 
     async def forward(self, synapse: crypto_ai.protocol.Dummy) -> crypto_ai.protocol.Dummy:
@@ -170,7 +172,9 @@ class Miner(BaseMinerNeuron):
         is_valid = any((len(symbol) <= 5 or len(symbol) >= 2) for symbol in requested_symbols)
 
         if not is_valid:
-            synapse.dummy_output = "No supported crypto symbols provided."
+            msg = "No supported crypto symbols provided"
+            synapse.dummy_output = msg
+            bt.logging.warning(msg)
             return synapse
 
         historical_prices = self.get_historical_prices(requested_symbols, requested_currency)
@@ -189,7 +193,9 @@ class Miner(BaseMinerNeuron):
             
             return synapse
         else:
-            synapse.dummy_output = "Error fetching prices"
+            msg = "Error fetching prices"
+            synapse.dummy_output = msg
+            bt.logging.warning(msg)
             return synapse
     
     async def blacklist(self, synapse: crypto_ai.protocol.Dummy) -> typing.Tuple[bool, str]:
