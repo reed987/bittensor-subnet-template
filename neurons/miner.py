@@ -69,7 +69,7 @@ class Miner(BaseMinerNeuron):
             symbols = config.get('DEFAULT', 'symbols', fallback='tao').split(',') # Default to 'tao'
             model_path = config.get('DEFAULT', 'model_path', fallback=None)
             currency = config.get('DEFAULT', 'currency', fallback='usd')  # Default to 'usd'
-            intervals = config.get('DEFAULT', 'intervals', fallback='5m')  # Default to '5m'
+            intervals = config.get('DEFAULT', 'intervals', fallback='5m').split(',')  # Default to '5m'
             
             return [symbol.strip() for symbol in symbols], model_path, currency, intervals  # Strip whitespace from symbols
         
