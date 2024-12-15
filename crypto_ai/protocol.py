@@ -57,6 +57,9 @@ class Dummy(bt.Synapse):
     # Optional request output, filled by receiving axon.
     dummy_output: typing.Optional[int] = None
 
+    # Optional error message field
+    error: typing.Optional[str] = None
+
     def deserialize(self) -> int:
         """
         Deserialize the dummy output. This method retrieves the response from

@@ -176,6 +176,7 @@ class Miner(BaseMinerNeuron):
         if not is_valid_symbol:
             msg = "No supported crypto symbols provided"
             synapse.dummy_output = msg
+            synapse.error = msg
             bt.logging.warning(msg)
             return synapse
 
@@ -184,6 +185,7 @@ class Miner(BaseMinerNeuron):
         if not is_valid_interval:
             msg = "No supported intervals provided"
             synapse.dummy_output = msg
+            synapse.error = msg
             bt.logging.warning(msg)
             return synapse
 
