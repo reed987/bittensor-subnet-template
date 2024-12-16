@@ -54,6 +54,11 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Save a copy of the hotkeys to local memory.
         self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
+        self.all_uids = [int(uid) for uid in self.metagraph.uids]
+        self.all_uids_info = {
+            uid: {"scores": [], "miner_mode": "", "is_tested": False,
+                   "tested_entries_amount": 0} for uid in self.all_uids
+        }
 
         # Dendrite lets us send messages to other nodes (axons) in the network.
         if self.config.mock:

@@ -246,6 +246,12 @@ def add_validator_args(cls, parser):
         default="opentensor-dev",
     )
 
+    parser.add_argument(
+        "--update_miners_routine_interval",
+        type=int,
+        help="The interval at which the validator updates the miners identity info.",
+        default=60, #seconds
+    )
 
 def config(cls):
     """

@@ -19,6 +19,7 @@ import bittensor as bt
 
 import crypto_ai
 from crypto_ai.base.miner import BaseMinerNeuron
+from crypto_ai.miner.forward import set_info
 from enum import Enum
 
 import os
@@ -48,6 +49,7 @@ class Miner(BaseMinerNeuron):
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
         
+        self.miner_info = set_info(self)
         # Load default symbols, model path and currency from config file
         self.crypto_symbols, self.model_path, self.currency, self.intervals = self.load_config()
         
@@ -209,6 +211,13 @@ class Miner(BaseMinerNeuron):
             synapse.dummy_output = msg
             bt.logging.warning(msg)
             return synapse
+        
+    async def forward_info(
+        self, synapse: crypto_ai.protocol.MinerDataSynapse
+    ) -> crypto_ai.protocol.MinerDataSynapse:
+        synapse.response = self.miner_info
+
+        return synapse
     
     async def blacklist(self, synapse: crypto_ai.protocol.Dummy) -> typing.Tuple[bool, str]:
         pass
