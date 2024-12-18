@@ -17,7 +17,7 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
-import typing
+from typing import Optional
 import bittensor as bt
 
 # TODO(developer): Rewrite with your protocol definition.
@@ -39,6 +39,11 @@ import bittensor as bt
 #   dummy_output = dendrite.query( Dummy( dummy_input = 1 ) )
 #   assert dummy_output == 2
 
+class MinerDataSynapse(bt.Synapse):
+    response: Optional[dict] = None
+
+    def deserialize(self) -> dict | None :
+        return self.response
 
 class Dummy(bt.Synapse):
     """
